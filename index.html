@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>쉬는 날 맞춤 일본행</title>
+<style>
+:root{--bg:#eef2f7;--card:#fff;--ink:#14233b;--mute:#5b6b82;--line:#d5deea;--red:#d8453a;--blue:#2c5fa8;
+--board:#16181d;--tile:#24272e;--tileink:#f6d365;--seam:#0a0b0e;--boardmute:#8b92a3;
+--M:#2a2ad0;--E:#2f9e1e;--N:#1fb594;--O:#e8345a;--hi:#fde7ea;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1726;--card:#16233a;--ink:#eaf0fa;--mute:#9fb0c8;--line:#2a3b58;--red:#ff6f63;--blue:#7fb0ff;--board:#090a0d;--tile:#1c1f25;--M:#8f8fff;--E:#58d044;--N:#42d9b8;--O:#ff5c80;--hi:#3a1c2a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e1726;--card:#16233a;--ink:#eaf0fa;--mute:#9fb0c8;--line:#2a3b58;--red:#ff6f63;--blue:#7fb0ff;--board:#090a0d;--tile:#1c1f25;--M:#8f8fff;--E:#58d044;--N:#42d9b8;--O:#ff5c80;--hi:#3a1c2a;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif}
+main{max-width:640px;margin:0 auto;padding:0 14px 40px}
+.stripe{height:10px;background:repeating-linear-gradient(135deg,var(--red) 0 14px,var(--bg) 14px 22px,var(--blue) 22px 36px,var(--bg) 36px 44px);margin:0 -14px 16px}
+h1{font-size:1.6rem;line-height:1.25;margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--mute);margin:0;font-size:.9rem}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+.tabs{display:flex;gap:6px;margin:16px 0 12px}
+.tabs button{flex:1;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:10px 0;font-weight:600}
+.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px}
+.chips button{flex:none;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:7px 12px;font-size:.88rem}
+.chips button[aria-pressed="true"]{border-color:var(--O);background:var(--hi)}
+.board{background:var(--board);border-radius:14px;padding:12px 10px 8px;overflow-x:auto;box-shadow:inset 0 0 0 2px #000}
+.btop{display:flex;justify-content:space-between;align-items:baseline;color:var(--boardmute);font-size:.78rem;margin:0 2px 8px}
+.btop b{color:var(--tileink);font-size:.95rem;letter-spacing:.04em}
+.row{display:grid;grid-template-columns:auto auto auto 1fr auto;gap:8px;align-items:center;padding:6px 2px;border-top:1px solid #2a2d35;min-width:330px}
+.row.head{border:0;color:var(--boardmute);font-size:.72rem;padding-top:0}
+.f{display:inline-flex;gap:2px}
+.f span{display:inline-block;min-width:1.05em;text-align:center;background:var(--tile);color:var(--tileink);font:700 15px/1.45 "SF Mono",Menlo,Consolas,"Apple SD Gothic Neo","Noto Sans KR",monospace;border-radius:3px;position:relative}
+.f span::after{content:"";position:absolute;left:0;right:0;top:50%;height:1px;background:var(--seam)}
+.f span.flip{animation:fl .06s linear}
+@keyframes fl{50%{transform:scaleY(.15)}}
+@media (prefers-reduced-motion:reduce){.f span.flip{animation:none}}
+.price{justify-self:end}
+.star{background:none;border:0;color:var(--boardmute);font-size:1.25rem;width:36px;height:36px}
+.star[aria-pressed="true"]{color:var(--tileink)}
+.row a{color:inherit;text-decoration:none}
+.empty{color:var(--boardmute);font-size:.9rem;padding:14px 4px}
+.links{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 0}
+.links a{flex:1;min-width:90px;text-align:center;background:var(--blue);color:#fff;border-radius:8px;padding:9px 6px;text-decoration:none;font-weight:600;font-size:.9rem}
+:root[data-theme="dark"] .links a{color:#0e1726}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .links a{color:#0e1726}}
+.note{color:var(--mute);font-size:.85rem;margin:8px 0}
+.pass{background:var(--card);border:1px solid var(--line);border-radius:14px;margin:0 0 14px;overflow:hidden}
+.pt{padding:14px 16px 10px;display:flex;justify-content:space-between;gap:10px}
+.pt .city{font-size:1.35rem;font-weight:800;margin:0}
+.pt .code{color:var(--mute);font-size:.85rem}
+.perf{border-top:2px dashed var(--line);position:relative}
+.perf::before,.perf::after{content:"";position:absolute;top:-9px;width:16px;height:16px;border-radius:50%;background:var(--bg);border:1px solid var(--line)}
+.perf::before{left:-9px}.perf::after{right:-9px}
+.pb{padding:12px 16px 14px;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:.9rem}
+.pb dt{color:var(--mute);font-size:.75rem}.pb dd{margin:0;font-weight:600}
+.down{color:var(--E)}.up{color:var(--O)}
+.pact{grid-column:1/-1;display:flex;gap:8px;margin-top:6px}
+.pact a,.pact button{flex:1;text-align:center;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px;text-decoration:none;color:var(--ink);font-size:.88rem}
+.cal{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin:0 0 12px}
+.cal h3{margin:0 0 8px;font-size:1rem}
+.g{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center}
+.g .dow{font-size:.75rem;color:var(--mute)}
+.d{border-radius:8px;padding:3px 0 4px;min-height:44px;border:2px solid transparent}
+.d i{display:block;font-style:normal;font-size:.72rem;color:var(--mute)}
+.d.past{opacity:.35}.d.win{background:var(--hi);border-color:var(--O)}.d.today{border-color:var(--ink)}
+.c-M{color:var(--M)}.c-E{color:var(--E)}.c-N{color:var(--N)}.c-O,.c-V{color:var(--O)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<div class="stripe" role="presentation"></div>
+<h1>쉬는 날에 맞춘 일본행</h1>
+<p class="sub">인천, 김포, 청주 출발 · 휴무 구간별 최저가</p>
+<div class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-t="board">전광판</button>
+  <button role="tab" aria-selected="false" data-t="saved">저장함 <span id="cnt"></span></button>
+  <button role="tab" aria-selected="false" data-t="cal">근무표</button>
+</div>
+<section id="v-board">
+  <div class="chips" id="chips"></div>
+  <div class="board">
+    <div class="btop"><b>DEPARTURES</b><span id="stamp">가격 데이터 불러오는 중</span></div>
+    <div class="row head"><span>출발</span><span>목적지</span><span>공항</span><span class="price">최저가</span><span></span></div>
+    <div id="rows"></div>
+  </div>
+  <p class="note" id="wnote"></p>
+  <div class="links" id="links"></div>
+</section>
+<section id="v-saved" hidden><div id="saved"></div></section>
+<section id="v-cal" hidden><div id="cals"></div>
+  <p class="note">M 아침(14:20 퇴근) · E 오후(22:20 퇴근) · N 야간(아침 6:30 퇴근) · O 휴무 · 휴 휴가</p></section>
+</main>
+<script>
+// 근무표: schedule.json에서 읽음. 키 "YYYY-MM", 값은 날짜순 코드 (M/E/N/O, V=휴가)
+// 아래는 schedule.json을 못 읽을 때만 쓰는 예비 데이터
+let SCHED={"2026-10":"EOMMMMOONNNNOEEEEOMMMMOOVNNNOEE","2026-11":"EEOMMMMOONNNVOEEEEOMEMMOONNNNO","2026-12":"EEEEOMMMMOONNNNOEEEEOMMMMOONNNN"};
+// "10" 같은 월만 있는 키도 받아줌 (연도는 2026으로 간주)
+const normSched=j=>{const o={};for(const k in j)o[k.includes("-")?k:"2026-"+k.padStart(2,"0")]=j[k];return o};
+const months=()=>Object.keys(SCHED).sort().map(k=>{const [y,m]=k.split("-").map(Number);return {y,m,codes:SCHED[k]}});
+const DOW="일월화수목금토";
+const END={M:"14:20",E:"22:20",N:"아침 6:30",O:"-",V:"-"},START={M:"06:20",E:"14:20",N:"22:20",O:"-",V:"-"};
+const APS=[["인천","ICN"],["김포","GMP"],["청주","CJJ"]];
+const today=new Date();today.setHours(0,0,0,0);
+const off=c=>c==="O"||c==="V";
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const md=d=>(d.getMonth()+1)+"/"+d.getDate();
+const won=n=>Number(n).toLocaleString("ko-KR");
+let days=[],wins=[];
+function build(){days=[];wins=[];
+  months().forEach(({y,m,codes})=>[...codes].forEach((c,i)=>days.push({d:new Date(y,m-1,i+1),c})));
+  for(let i=0;i<days.length;){if(off(days[i].c)&&days[i].d>=today){let j=i;while(j+1<days.length&&off(days[j+1].c))j++;
+    if(j>i)wins.push({a:i,b:j,s:days[i].d,e:days[j].d,pre:days[i-1]||{c:"O"},post:days[j+1]||{c:"O"}});i=j+1}else i++}}
+build();
+let cur=0,DATA=null;
+function ls(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||"[]");localStorage.setItem(k,JSON.stringify(v))}catch(e){return []}}
+let saved=ls("savedFares");
+const keyOf=f=>[f.window_start,f.from,f.to,f.depart].join("|");
+
+// 스플릿플랩
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const POOL_L="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",POOL_H="가나다라마바사아자차카타파하도쿄오키";
+function flap(el,text,w){text=String(text);if(w)text=text.padEnd(w," ");el.className="f";el.textContent="";
+  [...text].forEach((ch,i)=>{const s=document.createElement("span");el.appendChild(s);
+    if(reduce||ch===" "){s.textContent=ch===" "?"\u00a0":ch;return}
+    const pool=/[가-힣]/.test(ch)?POOL_H:POOL_L;let n=5+i*2+Math.floor(Math.random()*6);
+    const t=setInterval(()=>{s.classList.remove("flip");void s.offsetWidth;s.classList.add("flip");
+      if(--n<=0){s.textContent=ch;clearInterval(t)}else s.textContent=pool[Math.floor(Math.random()*pool.length)]},60)})}
+
+function faresFor(w){const pv=new Date(w.s);pv.setDate(pv.getDate()-1);return ((DATA&&DATA.fares)||[]).filter(f=>f.window_start===iso(w.s)||f.window_start===iso(pv)).sort((a,b)=>a.price-b.price)}
+// 제미나이 초안 형식(last_updated, routes, date)도 읽도록 맞춤
+function norm(j){return {updated_at:String(j.updated_at||j.last_updated||"").replace(" ","T"),fares:(j.fares||j.routes||[]).map(f=>({...f,city:f.city||f.to,window_start:f.window_start||f.date}))}}
+function renderChips(){const C=document.getElementById("chips");C.innerHTML="";
+  wins.forEach((w,k)=>{const b=document.createElement("button");b.setAttribute("aria-pressed",k===cur);
+    b.textContent=md(w.s)+"–"+md(w.e)+" · "+(w.b-w.a+1)+"일";b.onclick=()=>{cur=k;renderChips();renderBoard()};C.appendChild(b)})}
+function renderBoard(){const R=document.getElementById("rows");R.innerHTML="";const w=wins[cur];
+  if(!w){R.innerHTML='<p class="empty">앞으로 남은 휴무 구간이 없어요. 근무표를 업데이트해 주세요.</p>';return}
+  const fs=faresFor(w);
+  if(!fs.length)R.innerHTML='<p class="empty">이 구간의 가격 데이터가 아직 없어요. 아래 링크로 직접 확인할 수 있어요.</p>';
+  fs.forEach(f=>{const r=document.createElement("div");r.className="row";
+    const a=[document.createElement("span"),document.createElement("span"),document.createElement("span"),document.createElement("span")];
+    a[3].classList.add("price");a.forEach(x=>r.appendChild(x));
+    flap(a[0],(f.depart||"").slice(11,16)||"--:--");flap(a[1],f.city||f.to,4);flap(a[2],f.from);flap(a[3],won(f.price),7);
+    if(f.link){r.style.cursor="pointer";r.onclick=e=>{if(!e.target.closest(".star"))window.open(f.link,"_blank","noopener")}}
+    const st=document.createElement("button");st.className="star";st.textContent="★";
+    const on=()=>saved.some(s=>s.key===keyOf(f));
+    st.setAttribute("aria-pressed",on());st.setAttribute("aria-label","저장");
+    st.onclick=()=>{if(on())saved=saved.filter(s=>s.key!==keyOf(f));else saved.push({...f,window_end:iso(w.e),key:keyOf(f),saved_at:new Date().toISOString()});
+      ls("savedFares",saved);st.setAttribute("aria-pressed",on());count()};
+    r.appendChild(st);R.appendChild(r)});
+  document.getElementById("wnote").textContent="앞 근무 "+w.pre.c+" 퇴근 "+END[w.pre.c]+" · 뒤 근무 "+w.post.c+" 출근 "+START[w.post.c]+
+    (w.pre.c==="M"?". M 퇴근 후 전날 저녁 출발도 가능해요.":".");
+  document.getElementById("links").innerHTML=APS.map(([n,c])=>'<a target="_blank" rel="noopener" href="https://www.google.com/travel/flights?q='+
+    encodeURIComponent("Flights from "+c+" to Japan on "+iso(w.s)+" through "+iso(w.e))+'">'+n+' 직접 검색</a>').join("")}
+function count(){document.getElementById("cnt").textContent=saved.length?"("+saved.length+")":""}
+function renderSaved(){const S=document.getElementById("saved");S.innerHTML="";
+  if(!saved.length){S.innerHTML='<p class="note">전광판에서 ★을 누르면 여기에 모여요.</p>';return}
+  [...saved].sort((a,b)=>a.window_start.localeCompare(b.window_start)||a.price-b.price).forEach(f=>{
+    const now=((DATA&&DATA.fares)||[]).filter(x=>x.window_start===f.window_start&&x.from===f.from&&x.to===f.to).map(x=>x.price);
+    const best=now.length?Math.min(...now):null,diff=best===null?"":best-f.price;
+    const el=document.createElement("article");el.className="pass";
+    el.innerHTML='<div class="pt"><div><p class="city">'+(f.city||f.to)+'</p><span class="code">'+f.from+' → '+f.to+(f.airline?' · '+f.airline:'')+'</span></div><div class="code">'+f.window_start.slice(5).replace("-","/")+'–'+f.window_end.slice(5).replace("-","/")+'</div></div>'+
+    '<div class="perf"></div><dl class="pb"><div><dt>가는 편</dt><dd>'+((f.depart||"").slice(5,16).replace("T"," ")||"-")+'</dd></div><div><dt>오는 편</dt><dd>'+((f.return_depart||"").slice(5,16).replace("T"," ")||"-")+'</dd></div>'+
+    '<div><dt>저장할 때</dt><dd>'+won(f.price)+'원</dd></div><div><dt>지금 최저가</dt><dd class="'+(diff===""?"":diff<0?"down":diff>0?"up":"")+'">'+(best===null?"데이터 없음":won(best)+'원'+(diff?(diff<0?" ▼":" ▲")+won(Math.abs(diff)):""))+'</dd></div>'+
+    '<div class="pact">'+(f.link?'<a target="_blank" rel="noopener" href="'+f.link+'">예약 페이지</a>':'')+'<button>삭제</button></div></dl>';
+    el.querySelector(".pact button").onclick=()=>{saved=saved.filter(s=>s.key!==f.key);ls("savedFares",saved);count();renderSaved()};
+    S.appendChild(el)})}
+function renderCal(){const C=document.getElementById("cals");C.innerHTML="";const inWin=new Set();wins.forEach(w=>{for(let k=w.a;k<=w.b;k++)inWin.add(k)});
+  for(const {y,m,codes} of months()){let h='<div class="cal"><h3>'+y+'년 '+m+'월</h3><div class="g">'+[...DOW].map(x=>'<span class="dow">'+x+'</span>').join("");
+    for(let k=0;k<new Date(y,m-1,1).getDay();k++)h+="<span></span>";
+    [...codes].forEach((c,q)=>{const d=new Date(y,m-1,q+1),idx=days.findIndex(x=>x.d.getTime()===d.getTime());
+      h+='<div class="d'+(d<today?" past":"")+(inWin.has(idx)?" win":"")+(d.getTime()===today.getTime()?" today":"")+'"><i>'+(q+1)+'</i><b class="c-'+c+'">'+(c==="V"?"휴":c)+'</b></div>'});
+    C.insertAdjacentHTML("beforeend",h+"</div></div>")}}
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".tabs button").forEach(x=>x.setAttribute("aria-selected",x===b));
+  ["board","saved","cal"].forEach(t=>document.getElementById("v-"+t).hidden=t!==b.dataset.t);
+  if(b.dataset.t==="board")renderBoard();if(b.dataset.t==="saved")renderSaved();if(b.dataset.t==="cal")renderCal()});
+count();renderChips();renderBoard();
+fetch("schedule.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{SCHED=normSched(j);build();cur=0;renderChips();renderBoard();
+  if(!document.getElementById("v-cal").hidden)renderCal()}).catch(()=>{});
+fetch("latest_prices.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{j=norm(j);DATA=j;
+  document.getElementById("stamp").textContent=j.updated_at?new Date(j.updated_at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})+" 기준":"기준 시각 없음";
+  renderBoard()}).catch(()=>{document.getElementById("stamp").textContent="가격 데이터 없음"});
+</script>
+</body>
+</html>
