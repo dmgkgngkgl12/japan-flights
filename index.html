@@ -26,6 +26,16 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--red);outline-offset
 .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px}
 .chips button{flex:none;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:7px 12px;font-size:.88rem}
 .chips button[aria-pressed="true"]{border-color:var(--O);background:var(--hi)}
+.seg{display:flex;gap:3px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;margin:0 0 8px}
+.seg button{flex:1;border:0;background:none;border-radius:9px;padding:9px 0;font-weight:700;font-size:.92rem;line-height:1.2}
+.seg button small{display:block;font-weight:400;font-size:.72rem;color:var(--mute)}
+.seg button[aria-selected="true"]{background:var(--blue);color:#fff}
+.seg button[aria-selected="true"] small{color:inherit;opacity:.85}
+:root[data-theme="dark"] .seg button[aria-selected="true"]{color:#0e1726}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .seg button[aria-selected="true"]{color:#0e1726}}
+.sorts{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding-bottom:2px}
+.sorts button{flex:none;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 11px;font-size:.84rem}
+.sorts button[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:var(--bg)}
 .board{background:var(--board);border-radius:14px;padding:12px 10px 8px;overflow-x:auto;box-shadow:inset 0 0 0 2px #000}
 .btop{display:flex;justify-content:space-between;align-items:baseline;color:var(--boardmute);font-size:.78rem;margin:0 2px 8px}
 .btop b{color:var(--tileink);font-size:.95rem;letter-spacing:.04em}
@@ -82,6 +92,8 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--red);outline-offset
 </div>
 <section id="v-board">
   <div class="chips" id="chips"></div>
+  <div class="seg" id="aps" role="tablist" aria-label="출발 공항"></div>
+  <div class="sorts" id="sorts" aria-label="정렬"></div>
   <div class="board">
     <div class="btop"><b>DEPARTURES</b><span id="stamp">가격 데이터 불러오는 중</span></div>
     <div class="row head"><span>출발</span><span>목적지</span><span>공항</span><span class="price">최저가</span><span></span></div>
@@ -136,10 +148,26 @@ function norm(j){return {updated_at:String(j.updated_at||j.last_updated||"").rep
 function renderChips(){const C=document.getElementById("chips");C.innerHTML="";
   wins.forEach((w,k)=>{const b=document.createElement("button");b.setAttribute("aria-pressed",k===cur);
     b.textContent=md(w.s)+"–"+md(w.e)+" · "+(w.b-w.a+1)+"일";b.onclick=()=>{cur=k;renderChips();renderBoard()};C.appendChild(b)})}
+// 공항 탭 + 정렬
+let AP="ALL",SORT="pa";
+try{AP=localStorage.getItem("ap")||"ALL";SORT=localStorage.getItem("sort")||"pa"}catch(e){}
+const SORTS={pa:["싼 가격순",(a,b)=>a.price-b.price],pd:["비싼 가격순",(a,b)=>b.price-a.price],
+  ta:["출발 빠른순",(a,b)=>(a.depart||"~").localeCompare(b.depart||"~")],td:["출발 늦은순",(a,b)=>(b.depart||"").localeCompare(a.depart||"")]};
+function setPref(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function renderCtrl(all){
+  const tabs=[["ALL","전체"]].concat(APS.map(([n,c])=>[c,n]));
+  document.getElementById("aps").innerHTML=tabs.map(([c,n])=>{const k=c==="ALL"?all.length:all.filter(f=>f.from===c).length;
+    return '<button role="tab" data-ap="'+c+'" aria-selected="'+(AP===c)+'">'+n+'<small>'+(k?k+'개 노선':'없음')+'</small></button>'}).join("");
+  document.querySelectorAll("#aps button").forEach(b=>b.onclick=()=>{AP=b.dataset.ap;setPref("ap",AP);renderBoard()});
+  document.getElementById("sorts").innerHTML=Object.keys(SORTS).map(k=>'<button data-s="'+k+'" aria-pressed="'+(SORT===k)+'">'+SORTS[k][0]+'</button>').join("");
+  document.querySelectorAll("#sorts button").forEach(b=>b.onclick=()=>{SORT=b.dataset.s;setPref("sort",SORT);renderBoard()});
+}
 function renderBoard(){const R=document.getElementById("rows");R.innerHTML="";const w=wins[cur];
   if(!w){R.innerHTML='<p class="empty">앞으로 남은 휴무 구간이 없어요. 근무표를 업데이트해 주세요.</p>';return}
-  const fs=faresFor(w);
-  if(!fs.length)R.innerHTML='<p class="empty">이 구간의 가격 데이터가 아직 없어요. 아래 링크로 직접 확인할 수 있어요.</p>';
+  const all=faresFor(w);renderCtrl(all);
+  const fs=(AP==="ALL"?all:all.filter(f=>f.from===AP)).sort(SORTS[SORT][1]);
+  if(all.length&&!fs.length)R.innerHTML='<p class="empty">이 공항에서 출발하는 가격 데이터가 없어요.</p>';
+  else if(!fs.length)R.innerHTML='<p class="empty">이 구간의 가격 데이터가 아직 없어요. 아래 링크로 직접 확인할 수 있어요.</p>';
   fs.forEach(f=>{const r=document.createElement("div");r.className="row";
     const a=[document.createElement("span"),document.createElement("span"),document.createElement("span"),document.createElement("span")];
     a[3].classList.add("price");a.forEach(x=>r.appendChild(x));
