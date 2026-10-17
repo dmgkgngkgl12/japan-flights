@@ -1,11 +1,20 @@
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor
 
-# 출발 공항별 노선 (실제 운항 여부는 첫 실행 로그로 확인 후 정리할 것)
+# ===== 사용량 절약 설정 (여기 숫자만 바꾸면 됨) =====
+MONTHLY_BUDGET = 300   # 한 달 최대 API 호출 수. 넘으면 그달은 더 검색 안 함
+NEAR_DAYS = 21         # 출발까지 21일 이내 구간은
+NEAR_EVERY = 3         #   3일에 한 번 검색
+FAR_DAYS = 60          # 21~60일 구간은 일요일에만, 60일 넘는 구간은 검색 안 함
+DEAD_SKIP_DAYS = 30    # 결과가 하나도 없던 노선은 30일 동안 건너뜀
+WORKERS = 6            # 동시에 검색하는 개수 (속도)
+# ===================================================
+
 ROUTES = {
     "ICN": [
         ("NRT", "도쿄(나리타)"), ("HND", "도쿄(하네다)"), ("KIX", "오사카"), ("FUK", "후쿠오카"),
@@ -19,35 +28,42 @@ ROUTES = {
     "CJJ": [("NRT", "도쿄(나리타)"), ("KIX", "오사카"), ("FUK", "후쿠오카"), ("CTS", "삿포로")],
 }
 
-API_URL = "https://ignav.com/api/fares/round-trip"  # Ignav 문서 Round-Trip Fares 기준
+API_URL = "https://ignav.com/api/fares/round-trip"
 API_KEY = os.environ.get("IGNAV_API_KEY", "")
 KST = ZoneInfo("Asia/Seoul")
-NEAR_DAYS = 21  # 이 기간 안의 구간은 매일, 그 밖은 일요일에만 검색
 
 
-def load_schedule():
-    with open("schedule.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+def load_json(path, default):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
 
 
-def get_windows(schedule_data, today):
+def save_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def get_windows(schedule, today):
     days = []
-    for ym in sorted(schedule_data.keys()):
+    for ym in sorted(schedule):
         y, m = map(int, ym.split("-"))
-        for i, c in enumerate(schedule_data[ym]):
+        for i, c in enumerate(schedule[ym]):
             days.append((datetime(y, m, i + 1).date(), c))
-    windows, i = [], 0
+    out, i = [], 0
     while i < len(days):
         if days[i][1] in ("O", "V"):
             j = i
             while j + 1 < len(days) and days[j + 1][1] in ("O", "V"):
                 j += 1
-            if j > i and days[i][0] >= today:  # 이미 시작한 구간은 제외
-                windows.append((days[i][0], days[j][0]))
+            if j > i and days[i][0] >= today:
+                out.append((days[i][0], days[j][0]))
             i = j + 1
         else:
             i += 1
-    return windows
+    return out
 
 
 def first_seg(leg):
@@ -55,41 +71,40 @@ def first_seg(leg):
     return segs[0] if segs else {}
 
 
-def fetch_price(origin, dest, dep, ret):
+def fetch(task):
+    origin, dest, city, dep, ret = task
     body = {"origin": origin, "destination": dest,
-            "departure_date": dep, "return_date": ret, "market": "KR"}  # KR = 원화
+            "departure_date": dep, "return_date": ret, "market": "KR"}
     try:
-        res = requests.post(API_URL, json=body, timeout=30,
-                            headers={"X-Api-Key": API_KEY, "Content-Type": "application/json"})
-        if res.status_code != 200:
-            print(f"[{res.status_code}] {origin}->{dest} {dep}: {res.text[:200]}")
-            return None
-        its = [x for x in res.json().get("itineraries", [])
+        r = requests.post(API_URL, json=body, timeout=30,
+                          headers={"X-Api-Key": API_KEY, "Content-Type": "application/json"})
+        if r.status_code != 200:
+            print(f"[에러 {r.status_code}] {origin}->{dest} {dep}: {r.text[:150]}")
+            return task, "error", None
+        its = [x for x in r.json().get("itineraries", [])
                if isinstance(x.get("price"), dict) and x["price"].get("amount") is not None]
         if not its:
             print(f"[결과 없음] {origin}->{dest} {dep}")
-            return None
-        best = min(its, key=lambda x: x["price"]["amount"])
-        out, inb = first_seg(best.get("outbound")), first_seg(best.get("inbound"))
-        return {
-            "price": best["price"]["amount"],
-            "currency": best["price"].get("currency", ""),
-            "airline": (best.get("outbound") or {}).get("carrier", "") or out.get("marketing_carrier_code", ""),
+            return task, "empty", None
+        b = min(its, key=lambda x: x["price"]["amount"])
+        out, inb = first_seg(b.get("outbound")), first_seg(b.get("inbound"))
+        print(f"[OK] {origin}->{dest} {dep} {b['price']['amount']}")
+        return task, "ok", {
+            "price": b["price"]["amount"],
+            "currency": b["price"].get("currency", ""),
+            "airline": (b.get("outbound") or {}).get("carrier", "") or out.get("marketing_carrier_code", ""),
             "depart": (out.get("departure_time_local") or "")[:16],
             "arrive": (out.get("arrival_time_local") or "")[:16],
             "return_depart": (inb.get("departure_time_local") or "")[:16],
-            "stops": max(len((best.get("outbound") or {}).get("segments") or []) - 1, 0),
-            "ignav_id": best.get("ignav_id", ""),
+            "stops": max(len((b.get("outbound") or {}).get("segments") or []) - 1, 0),
         }
     except Exception as e:
         print(f"[에러] {origin}->{dest} {dep}: {e}")
-        return None
+        return task, "error", None
 
 
-def search_link(origin, dest, dep, ret):
-    # 예약 링크 API는 별도 호출(추가 사용량)이라 무료 검색 링크로 대신함
-    q = f"Flights from {origin} to {dest} on {dep} through {ret}"
-    return "https://www.google.com/travel/flights?q=" + quote(q)
+def search_link(o, d, dep, ret):
+    return "https://www.google.com/travel/flights?q=" + quote(f"Flights from {o} to {d} on {dep} through {ret}")
 
 
 if __name__ == "__main__":
@@ -98,46 +113,74 @@ if __name__ == "__main__":
 
     now = datetime.now(KST)
     today = now.date()
-    windows = get_windows(load_schedule(), today)
-    valid_starts = {d.isoformat() for d, _ in windows}
+    month = today.strftime("%Y-%m")
+    state = load_json("state.json", {"usage": {}, "dead": {}})
+    used = state["usage"].get(month, 0)
+    left = MONTHLY_BUDGET - used
 
-    # 기존 데이터 불러오되, 지나갔거나 근무표에서 사라진 구간은 버림
-    existing = {}
-    if os.path.exists("latest_prices.json"):
-        try:
-            with open("latest_prices.json", "r", encoding="utf-8") as f:
-                for fare in json.load(f).get("fares", []):
-                    if fare.get("window_start") in valid_starts:
-                        existing[(fare["window_start"], fare["from"], fare["to"])] = fare
-        except Exception as e:
-            print(f"기존 파일 읽기 실패: {e}")
+    windows = get_windows(load_json("schedule.json", {}), today)
+    valid = {s.isoformat() for s, _ in windows}
 
-    is_sunday = now.weekday() == 6
-    ok = tried = 0
+    # 1) 이번에 검색할 목록 정하기
+    tasks = []
     for start, end in windows:
-        if (start - today).days > NEAR_DAYS and not is_sunday:
+        d = (start - today).days
+        near_day = d <= NEAR_DAYS and today.toordinal() % NEAR_EVERY == 0
+        far_day = NEAR_DAYS < d <= FAR_DAYS and today.weekday() == 6
+        if not (near_day or far_day):
             continue
-        dep, ret = start.isoformat(), end.isoformat()
-        for origin, dests in ROUTES.items():
+        for o, dests in ROUTES.items():
             for code, city in dests:
-                tried += 1
-                info = fetch_price(origin, code, dep, ret)
-                if not info:
+                dead = state["dead"].get(f"{o}-{code}")
+                if dead and (today - datetime.fromisoformat(dead).date()).days < DEAD_SKIP_DAYS:
                     continue
+                tasks.append((o, code, city, start.isoformat(), end.isoformat()))
+    tasks.sort(key=lambda t: t[3])  # 가까운 구간부터
+    if len(tasks) > left:
+        print(f"이번 달 남은 한도 {max(left, 0)}건 → {len(tasks)}건 중 일부만 검색")
+        tasks = tasks[:max(left, 0)]
+    print(f"이번 달 사용 {used}/{MONTHLY_BUDGET}, 이번 실행 {len(tasks)}건")
+
+    # 2) 기존 데이터 (지나간 구간은 버림)
+    old = load_json("latest_prices.json", {})
+    fares = {(f["window_start"], f["from"], f["to"]): f
+             for f in old.get("fares", []) if f.get("window_start") in valid}
+
+    # 3) 검색 (동시에 여러 건)
+    ok = err = 0
+    route_hits = {}
+    with ThreadPoolExecutor(WORKERS) as ex:
+        for (o, code, city, dep, ret), status, info in ex.map(fetch, tasks):
+            key = f"{o}-{code}"
+            if status == "ok":
                 ok += 1
-                existing[(dep, origin, code)] = {
-                    "window_start": dep, "window_end": ret,
-                    "from": origin, "to": code, "city": city, **info,
-                    "link": search_link(origin, code, dep, ret),
+                route_hits[key] = True
+                fares[(dep, o, code)] = {
+                    "window_start": dep, "window_end": ret, "from": o, "to": code, "city": city,
+                    **info, "link": search_link(o, code, dep, ret),
                     "checked_at": now.isoformat(timespec="minutes"),
                 }
+            elif status == "empty":
+                route_hits.setdefault(key, False)
+            else:
+                err += 1
 
-    print(f"검색 {tried}건, 성공 {ok}건")
-    if tried and ok == 0:
-        raise SystemExit("성공 0건: 기존 데이터를 보존하고 종료합니다.")
+    # 결과가 한 번도 없던 노선은 한동안 건너뛰기
+    for key, hit in route_hits.items():
+        if hit:
+            state["dead"].pop(key, None)
+        else:
+            state["dead"][key] = today.isoformat()
+            print(f"[노선 쉬기] {key}: {DEAD_SKIP_DAYS}일 동안 건너뜀")
 
-    with open("latest_prices.json", "w", encoding="utf-8") as f:
-        json.dump({"updated_at": now.isoformat(timespec="minutes"),
-                   "fares": sorted(existing.values(), key=lambda x: (x["window_start"], x["price"]))},
-                  f, ensure_ascii=False, indent=2)
-    print(f"저장 완료: 총 {len(existing)}건")
+    state["usage"][month] = used + len(tasks)
+    save_json("state.json", state)
+    print(f"검색 {len(tasks)}건 / 성공 {ok} / 에러 {err} / 이번 달 누적 {state['usage'][month]}")
+
+    if tasks and ok == 0 and err > 0:
+        raise SystemExit("성공 0건: 기존 가격 데이터를 보존하고 종료합니다.")
+
+    save_json("latest_prices.json", {
+        "updated_at": now.isoformat(timespec="minutes") if ok else old.get("updated_at", ""),
+        "fares": sorted(fares.values(), key=lambda x: (x["window_start"], x["price"])),
+    })
