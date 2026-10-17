@@ -211,10 +211,16 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll(".tabs button").forEach(x=>x.setAttribute("aria-selected",x===b));
   ["board","saved","cal"].forEach(t=>document.getElementById("v-"+t).hidden=t!==b.dataset.t);
   if(b.dataset.t==="board")renderBoard();if(b.dataset.t==="saved")renderSaved();if(b.dataset.t==="cal")renderCal()});
+// 깃허브 저장소 원본에서 바로 읽음 (자동 수집 커밋은 사이트 재배포를 안 일으키기 때문). 실패하면 사이트 폴더에서 읽음
+function getJSON(name){
+  const user=location.hostname.split(".")[0],repo=location.pathname.split("/")[1];
+  const raw=location.hostname.endsWith("github.io")&&repo?"https://raw.githubusercontent.com/"+user+"/"+repo+"/main/"+name+"?t="+Date.now():null;
+  const get=u=>fetch(u,{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()});
+  return raw?get(raw).catch(()=>get(name)):get(name)}
 count();renderChips();renderBoard();
-fetch("schedule.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{SCHED=normSched(j);build();cur=0;renderChips();renderBoard();
+getJSON("schedule.json").then(j=>{SCHED=normSched(j);build();cur=0;renderChips();renderBoard();
   if(!document.getElementById("v-cal").hidden)renderCal()}).catch(()=>{});
-fetch("latest_prices.json",{cache:"no-store"}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(j=>{j=norm(j);DATA=j;
+getJSON("latest_prices.json").then(j=>{j=norm(j);DATA=j;
   document.getElementById("stamp").textContent=j.updated_at?new Date(j.updated_at).toLocaleString("ko-KR",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})+" 기준":"기준 시각 없음";
   renderBoard()}).catch(()=>{document.getElementById("stamp").textContent="가격 데이터 없음"});
 </script>
