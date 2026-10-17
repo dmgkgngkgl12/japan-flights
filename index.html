@@ -84,7 +84,7 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--red);outline-offset
 <main>
 <div class="stripe" role="presentation"></div>
 <h1>쉬는 날에 맞춘 일본행</h1>
-<p class="sub">인천, 김포, 청주 출발 · 휴무 구간별 최저가</p>
+<p class="sub">인천, 김포, 청주 출발 · 근무 사이클 맞춤 3박4일·4박5일 최저가</p>
 <div class="tabs" role="tablist">
   <button role="tab" aria-selected="true" data-t="board">전광판</button>
   <button role="tab" aria-selected="false" data-t="saved">저장함 <span id="cnt"></span></button>
@@ -122,10 +122,15 @@ const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+Stri
 const md=d=>(d.getMonth()+1)+"/"+d.getDate();
 const won=n=>Number(n).toLocaleString("ko-KR");
 let days=[],wins=[];
+// 여행 후보: M 블록 → 휴무(O) → N 블록. 출발은 M 넷째 날(휴가 1일) 또는 M 셋째 날(휴가 2일) 퇴근 후, 귀국은 N 첫날(휴가)
 function build(){days=[];wins=[];
   months().forEach(({y,m,codes})=>[...codes].forEach((c,i)=>days.push({d:new Date(y,m-1,i+1),c})));
-  for(let i=0;i<days.length;){if(off(days[i].c)&&days[i].d>=today){let j=i;while(j+1<days.length&&off(days[j+1].c))j++;
-    if(j>i)wins.push({a:i,b:j,s:days[i].d,e:days[j].d,pre:days[i-1]||{c:"O"},post:days[j+1]||{c:"O"}});i=j+1}else i++}}
+  for(let i=0;i<days.length;){if(days[i].c==="O"){let j=i;while(j+1<days.length&&days[j+1].c==="O")j++;const r=j+1;
+    if(days[i-1]&&days[i-1].c==="M"&&days[r]&&(days[r].c==="N"||days[r].c==="V"))
+      [[i-1,1],[i-2,2]].forEach(([a,leave])=>{if(days[a]&&days[a].c==="M"&&days[a].d>=today)
+        wins.push({a,b:r,s:days[a].d,e:days[r].d,leave,nights:r-a})});
+    i=j+1}else i++}
+  wins.sort((x,y)=>x.e-y.e||y.s-x.s)}
 build();
 let cur=0,DATA=null;
 function ls(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||"[]");localStorage.setItem(k,JSON.stringify(v))}catch(e){return []}}
@@ -142,12 +147,12 @@ function flap(el,text,w){text=String(text);if(w)text=text.padEnd(w," ");el.class
     const t=setInterval(()=>{s.classList.remove("flip");void s.offsetWidth;s.classList.add("flip");
       if(--n<=0){s.textContent=ch;clearInterval(t)}else s.textContent=pool[Math.floor(Math.random()*pool.length)]},60)})}
 
-function faresFor(w){const pv=new Date(w.s);pv.setDate(pv.getDate()-1);return ((DATA&&DATA.fares)||[]).filter(f=>f.window_start===iso(w.s)||f.window_start===iso(pv)).sort((a,b)=>a.price-b.price)}
+function faresFor(w){const pv=new Date(w.s);pv.setDate(pv.getDate()-1);return ((DATA&&DATA.fares)||[]).filter(f=>f.window_start===iso(w.s)&&f.window_end===iso(w.e)).sort((a,b)=>a.price-b.price)}
 // 제미나이 초안 형식(last_updated, routes, date)도 읽도록 맞춤
 function norm(j){return {updated_at:String(j.updated_at||j.last_updated||"").replace(" ","T"),fares:(j.fares||j.routes||[]).map(f=>({...f,city:f.city||f.to,window_start:f.window_start||f.date}))}}
 function renderChips(){const C=document.getElementById("chips");C.innerHTML="";
   wins.forEach((w,k)=>{const b=document.createElement("button");b.setAttribute("aria-pressed",k===cur);
-    b.textContent=md(w.s)+"–"+md(w.e)+" · "+(w.b-w.a+1)+"일";b.onclick=()=>{cur=k;renderChips();renderBoard()};C.appendChild(b)})}
+    b.textContent=md(w.s)+"–"+md(w.e)+" · "+w.nights+"박"+(w.nights+1)+"일";b.onclick=()=>{cur=k;renderChips();renderBoard()};C.appendChild(b)})}
 // 공항 탭 + 정렬
 let AP="ALL",SORT="pa";
 try{AP=localStorage.getItem("ap")||"ALL";SORT=localStorage.getItem("sort")||"pa"}catch(e){}
@@ -179,8 +184,8 @@ function renderBoard(){const R=document.getElementById("rows");R.innerHTML="";co
     st.onclick=()=>{if(on())saved=saved.filter(s=>s.key!==keyOf(f));else saved.push({...f,window_end:iso(w.e),key:keyOf(f),saved_at:new Date().toISOString()});
       ls("savedFares",saved);st.setAttribute("aria-pressed",on());count()};
     r.appendChild(st);R.appendChild(r)});
-  document.getElementById("wnote").textContent="앞 근무 "+w.pre.c+" 퇴근 "+END[w.pre.c]+" · 뒤 근무 "+w.post.c+" 출근 "+START[w.post.c]+
-    (w.pre.c==="M"?". M 퇴근 후 전날 저녁 출발도 가능해요.":".");
+  const dd=d=>md(d)+"("+DOW[d.getDay()]+")";
+  document.getElementById("wnote").textContent="출발 "+dd(w.s)+" M 퇴근 후, 17시 이후 출발편 · 귀국 "+dd(w.e)+" · 휴가 "+w.leave+"일("+(w.leave===2?"M 넷째 날, N 첫날":"N 첫날")+")";
   document.getElementById("links").innerHTML=APS.map(([n,c])=>'<a target="_blank" rel="noopener" href="https://www.google.com/travel/flights?q='+
     encodeURIComponent("Flights from "+c+" to Japan on "+iso(w.s)+" through "+iso(w.e))+'">'+n+' 직접 검색</a>').join("")}
 function count(){document.getElementById("cnt").textContent=saved.length?"("+saved.length+")":""}

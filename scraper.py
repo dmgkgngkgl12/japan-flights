@@ -13,6 +13,8 @@ NEAR_EVERY = 3         #   3일에 한 번 검색
 FAR_DAYS = 60          # 21~60일 구간은 일요일에만, 60일 넘는 구간은 검색 안 함
 DEAD_SKIP_DAYS = 30    # 결과가 하나도 없던 노선은 30일 동안 건너뜀
 WORKERS = 6            # 동시에 검색하는 개수 (속도)
+MIN_DEP = "17:00"      # 이 시각 이후 출발편만 (M 퇴근 14:20 → 공항 이동 고려)
+FORCE = os.environ.get("FORCE") == "true"  # 수동 실행이면 날짜 규칙 무시 (한도는 지킴)
 # ===================================================
 
 ROUTES = {
@@ -46,24 +48,29 @@ def save_json(path, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def get_windows(schedule, today):
+def get_trips(schedule, today):
+    """M 블록 → 휴무(O) → N 블록 사이클에서 여행 후보를 만든다.
+    출발: M 넷째 날(휴가 1일) 또는 M 셋째 날(휴가 2일) 퇴근 후 / 귀국: N 첫날(휴가)"""
     days = []
     for ym in sorted(schedule):
         y, m = map(int, ym.split("-"))
         for i, c in enumerate(schedule[ym]):
             days.append((datetime(y, m, i + 1).date(), c))
-    out, i = [], 0
+    trips, i = [], 0
     while i < len(days):
-        if days[i][1] in ("O", "V"):
+        if days[i][1] == "O":
             j = i
-            while j + 1 < len(days) and days[j + 1][1] in ("O", "V"):
+            while j + 1 < len(days) and days[j + 1][1] == "O":
                 j += 1
-            if j > i and days[i][0] >= today:
-                out.append((days[i][0], days[j][0]))
+            r = j + 1
+            if i >= 1 and days[i - 1][1] == "M" and r < len(days) and days[r][1] in ("N", "V"):
+                for a in (i - 1, i - 2):
+                    if a >= 0 and days[a][1] == "M" and days[a][0] >= today:
+                        trips.append((days[a][0], days[r][0]))
             i = j + 1
         else:
             i += 1
-    return out
+    return trips
 
 
 def first_seg(leg):
@@ -86,6 +93,11 @@ def fetch(task):
         if not its:
             print(f"[결과 없음] {origin}->{dest} {dep}")
             return task, "empty", None
+        its = [x for x in its
+               if (first_seg(x.get("outbound")).get("departure_time_local") or "")[11:16] >= MIN_DEP]
+        if not its:
+            print(f"[{MIN_DEP} 이후 출발편 없음] {origin}->{dest} {dep}")
+            return task, "nofit", None
         b = min(its, key=lambda x: x["price"]["amount"])
         out, inb = first_seg(b.get("outbound")), first_seg(b.get("inbound"))
         print(f"[OK] {origin}->{dest} {dep} {b['price']['amount']}")
@@ -118,15 +130,15 @@ if __name__ == "__main__":
     used = state["usage"].get(month, 0)
     left = MONTHLY_BUDGET - used
 
-    windows = get_windows(load_json("schedule.json", {}), today)
-    valid = {s.isoformat() for s, _ in windows}
+    trips = get_trips(load_json("schedule.json", {}), today)
+    valid = {(s.isoformat(), e.isoformat()) for s, e in trips}
 
     # 1) 이번에 검색할 목록 정하기
     tasks = []
-    for start, end in windows:
+    for start, end in trips:
         d = (start - today).days
-        near_day = d <= NEAR_DAYS and today.toordinal() % NEAR_EVERY == 0
-        far_day = NEAR_DAYS < d <= FAR_DAYS and today.weekday() == 6
+        near_day = d <= NEAR_DAYS and (FORCE or today.toordinal() % NEAR_EVERY == 0)
+        far_day = NEAR_DAYS < d <= FAR_DAYS and (FORCE or today.weekday() == 6)
         if not (near_day or far_day):
             continue
         for o, dests in ROUTES.items():
@@ -143,8 +155,8 @@ if __name__ == "__main__":
 
     # 2) 기존 데이터 (지나간 구간은 버림)
     old = load_json("latest_prices.json", {})
-    fares = {(f["window_start"], f["from"], f["to"]): f
-             for f in old.get("fares", []) if f.get("window_start") in valid}
+    fares = {(f["window_start"], f.get("window_end"), f["from"], f["to"]): f
+             for f in old.get("fares", []) if (f.get("window_start"), f.get("window_end")) in valid}
 
     # 3) 검색 (동시에 여러 건)
     ok = err = 0
@@ -155,11 +167,13 @@ if __name__ == "__main__":
             if status == "ok":
                 ok += 1
                 route_hits[key] = True
-                fares[(dep, o, code)] = {
+                fares[(dep, ret, o, code)] = {
                     "window_start": dep, "window_end": ret, "from": o, "to": code, "city": city,
                     **info, "link": search_link(o, code, dep, ret),
                     "checked_at": now.isoformat(timespec="minutes"),
                 }
+            elif status == "nofit":
+                route_hits[key] = True  # 노선은 있음 (시간만 안 맞음)
             elif status == "empty":
                 route_hits.setdefault(key, False)
             else:
